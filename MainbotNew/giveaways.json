@@ -1,0 +1,40 @@
+{
+  "3e337744-6893-421a-81f7-053bbf3130d8": {
+    "id": "3e337744-6893-421a-81f7-053bbf3130d8",
+    "ownerId": 422398534302564352,
+    "prize": "1",
+    "winners": 1,
+    "channelId": 1267452262364610641,
+    "messageId": 1481253696665948160,
+    "joinOpen": false,
+    "ended": true,
+    "templateName": "default",
+    "startImageUrl": "https://cdn.discordapp.com/ephemeral-attachments/1481253480776728630/1481253690277888052/1920x1080-pago_1.jpg?ex\u003d69b2a480\u0026is\u003d69b15300\u0026hm\u003d582405463cba448159c8cb81ebbe9ba443dfd581d9cef719e480989e749fb6a9\u0026",
+    "endImageUrl": "https://cdn.discordapp.com/ephemeral-attachments/1481253480776728630/1481253691628458064/1920x1080-pago_1.jpg?ex\u003d69b2a480\u0026is\u003d69b15300\u0026hm\u003d4397fc9d0012bf275fbb5b14e6b4e9b014bf2254916e56989aac80dc162bfbb0\u0026",
+    "joinEndTimeEpoch": 1773228860,
+    "endTimeEpoch": 1773228860,
+    "requiredRoleId": 852923248211263520,
+    "requiredRoleId2": 1397158222871396408,
+    "participants": {},
+    "tickets": []
+  },
+  "c3b2f6e5-2036-4f30-b370-c05880e48125": {
+    "id": "c3b2f6e5-2036-4f30-b370-c05880e48125",
+    "ownerId": 422398534302564352,
+    "prize": "1",
+    "winners": 1,
+    "channelId": 1267452262364610641,
+    "messageId": 0,
+    "joinOpen": false,
+    "ended": true,
+    "templateName": "default",
+    "startImageUrl": "https://cdn.discordapp.com/ephemeral-attachments/1458458506305994915/1479818016261673112/7.03.png?ex\u003d69ad6b6c\u0026is\u003d69ac19ec\u0026hm\u003d5824e766b115f64ff114f0a973225c5ac484d9bbe56a5f1d9c82554f773cdb86\u0026",
+    "endImageUrl": "https://cdn.discordapp.com/ephemeral-attachments/1458458506305994915/1479818017776074826/Ekwipunek___G4Skins_-_Otwieraj_skrzynki_CS_GO__CS2_i_zdobywaj_skiny_Opera_03.03.2026_14_29_27.png?ex\u003d69ad6b6d\u0026is\u003d69ac19ed\u0026hm\u003d54ff6e9c64196273f49a2c8bec12b606bdf03fee74e4a46ed33fa1b1a469b229\u0026",
+    "joinEndTimeEpoch": 1772886569,
+    "endTimeEpoch": 1772886569,
+    "requiredRoleId": 0,
+    "requiredRoleId2": 0,
+    "participants": {},
+    "tickets": []
+  }
+}
