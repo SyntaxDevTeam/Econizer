@@ -6,7 +6,7 @@
 
     <groupId>pl.syntaxdevteam</groupId>
     <artifactId>Econizer</artifactId>
-    <version>1.0-RC</version>
+    <version>1.0.0-R0.1-SNAPSHOT</version>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>

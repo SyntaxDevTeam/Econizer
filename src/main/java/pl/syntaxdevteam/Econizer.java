@@ -1,5 +1,6 @@
 package pl.syntaxdevteam;
 
+import io.github.cdimascio.dotenv.Dotenv;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.requests.GatewayIntent;
 import pl.syntaxdevteam.listeners.*;
@@ -11,7 +12,12 @@ public class Econizer {
         DatabaseManager db = new DatabaseManager();
         db.connect();
 
-        String token = "MTUwNjM2MjA0ODg2MTMxMTI5Nw.GUzuCa.Tly0aXCl_xjmKr6LWyYvR5ibr-F0u6HRAq8oJg";
+        String token = loadDiscordToken();
+        if (token == null) {
+            System.err.println("[System Błąd] Brak tokenu Discord!");
+            System.err.println("Utwórz plik .env (na podstawie .env.example) i ustaw DISCORD_TOKEN");
+            System.exit(1);
+        }
 
         try {
             JDABuilder builder = JDABuilder.createDefault(token);
@@ -40,5 +46,20 @@ public class Econizer {
             System.err.println("[System Błąd] Przerwano uruchamianie bota!");
             e.printStackTrace();
         }
+    }
+
+    private static String loadDiscordToken() {
+        String token = System.getenv("DISCORD_TOKEN");
+        if (token != null && !token.isBlank()) {
+            return token.trim();
+        }
+
+        Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
+        token = dotenv.get("DISCORD_TOKEN");
+        if (token != null && !token.isBlank()) {
+            return token.trim();
+        }
+
+        return null;
     }
 }
