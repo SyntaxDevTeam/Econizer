@@ -28,8 +28,6 @@ public class ModerationManager extends ListenerAdapter {
         String guildId = event.getGuild().getId();
         GuildSettings settings = db.getGuildSettings(guildId);
 
-        // --- AUTOMOD: Wykrywanie i karanie za zakazane słowa / linki ---
-        // Admini są ignorowani przez AutoModa
         if (settings.automodEnabled && event.getMember() != null && !event.getMember().hasPermission(Permission.ADMINISTRATOR)) {
             List<String> blockedWords = db.getBlockedWords(guildId);
             String msgContent = event.getMessage().getContentRaw().toLowerCase();
@@ -43,19 +41,13 @@ public class ModerationManager extends ListenerAdapter {
             }
 
             if (hasBadWord) {
-                // 1. Kasujemy wiadomość
                 event.getMessage().delete().queue();
-
-                // 2. Ostrzeżenie na czacie (znika po 5 sekundach)
-                event.getChannel().sendMessage("<@" + event.getAuthor().getId() + ">, ta wiadomość zawierała zablokowane słowo lub link i została usunięta!")
+                event.getChannel().sendMessage(LanguageManager.t(settings, "automod_warn", event.getAuthor().getId()))
                         .queue(m -> m.delete().queueAfter(5, java.util.concurrent.TimeUnit.SECONDS));
 
-                // 3. Kara: Timeout na 5 minut (Działa tylko, jeśli bot ma uprawnienie Mute/Timeout)
                 try {
                     event.getGuild().timeoutFor(event.getMember(), Duration.ofMinutes(5)).queue(null, err -> {});
-                } catch (Exception ignored) {
-                    // Ciche zignorowanie błędu, jeśli bot nie ma roli wyższej od gracza
-                }
+                } catch (Exception ignored) {}
             }
         }
     }
@@ -65,7 +57,6 @@ public class ModerationManager extends ListenerAdapter {
         String guildId = event.getGuild().getId();
         GuildSettings settings = db.getGuildSettings(guildId);
 
-        // --- AUTOROLE: Nadawanie domyślnej rangi nowemu graczowi ---
         if (settings.autoroleId != null && !settings.autoroleId.isEmpty()) {
             Role role = event.getGuild().getRoleById(settings.autoroleId);
             if (role != null) {
@@ -73,17 +64,14 @@ public class ModerationManager extends ListenerAdapter {
             }
         }
 
-        // --- POWITANIA: Wysyłanie wiadomości powitalnej na konkretny kanał ---
         if (settings.welcomeChannelId != null && !settings.welcomeChannelId.isEmpty()) {
             TextChannel channel = event.getGuild().getTextChannelById(settings.welcomeChannelId);
             if (channel != null && channel.canTalk()) {
-
-                // Zmieniamy {user} na faktyczny ping gracza z bazy danych
                 String msg = settings.welcomeMessage.replace("{user}", event.getMember().getAsMention());
 
                 EmbedBuilder embed = new EmbedBuilder()
                         .setColor(Color.decode("#2ECC71"))
-                        .setAuthor("Witamy na serwerze!", null, event.getUser().getEffectiveAvatarUrl())
+                        .setAuthor(LanguageManager.t(settings, "welcome_author"), null, event.getUser().getEffectiveAvatarUrl())
                         .setDescription(msg)
                         .setThumbnail(event.getUser().getEffectiveAvatarUrl());
 

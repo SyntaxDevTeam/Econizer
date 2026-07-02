@@ -28,4 +28,8 @@ public class LanguageManager {
         for (int i = 0; i < args.length; i++) t = t.replace("{" + i + "}", String.valueOf(args[i])).replace("\\n", "\n");
         return t;
     }
+
+    public static String t(GuildSettings settings, String key, Object... args) {
+        return get(settings == null ? "eng" : settings.language, key, args);
+    }
 }
