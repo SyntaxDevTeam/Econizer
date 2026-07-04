@@ -20,8 +20,8 @@ public class ShopSyncTask {
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private final HttpClient client = HttpClient.newHttpClient();
 
-    private final String API_TOKEN = "TWÓJ_SEKRETNY_TOKEN"; // Od Wieszcza
-    private final String BASE_URL = "https://econizer.syntaxdevteam.pl";
+    private final String apiToken = WebAPIManager.getApiToken();
+    private final String baseUrl = WebAPIManager.BASE_URL;
 
     public ShopSyncTask(JDA jda, DatabaseManager db) { this.jda = jda; this.db = db; }
 
@@ -32,8 +32,12 @@ public class ShopSyncTask {
     }
 
     private void fetchAndFulfillOrders(Guild guild) {
+        if (apiToken == null) {
+            return;
+        }
+
         try {
-            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(BASE_URL + "/api/econizer/shop/orders?guild_id=" + guild.getId())).header("X-Econizer-Token", API_TOKEN).GET().build();
+            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(baseUrl + "/api/econizer/shop/orders?guild_id=" + guild.getId())).header("X-Econizer-Token", apiToken).GET().build();
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200 && !response.body().isEmpty() && !response.body().equals("[]")) {
                 processOrdersJson(guild, response.body());
@@ -61,8 +65,12 @@ public class ShopSyncTask {
     }
 
     private void confirmFulfillment(String orderId) {
+        if (apiToken == null) {
+            return;
+        }
+
         try {
-            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(BASE_URL + "/api/econizer/shop/orders/fulfill")).header("X-Econizer-Token", API_TOKEN).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString("{\"order_id\":" + orderId + "}")).build();
+            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(baseUrl + "/api/econizer/shop/orders/fulfill")).header("X-Econizer-Token", apiToken).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString("{\"order_id\":" + orderId + "}")).build();
             client.send(request, HttpResponse.BodyHandlers.ofString());
         } catch (Exception ignored) {}
     }
