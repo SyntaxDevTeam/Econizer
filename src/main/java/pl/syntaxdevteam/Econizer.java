@@ -5,6 +5,8 @@ import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.requests.GatewayIntent;
 import pl.syntaxdevteam.listeners.*;
 
+import java.util.concurrent.ScheduledExecutorService;
+
 public class Econizer {
     public static void main(String[] args) {
         System.out.println("[System] Uruchamianie bota Econizer...");
@@ -40,6 +42,10 @@ public class Econizer {
             );
 
             builder.build().awaitReady();
+            ScheduledExecutorService uptimeHeartbeat = MiniPortalUptimeHeartbeat.startFromConfig();
+            if (uptimeHeartbeat != null) {
+                Runtime.getRuntime().addShutdownHook(new Thread(uptimeHeartbeat::shutdown, "miniportal-uptime-shutdown"));
+            }
             System.out.println("[System] Bot jest online i gotowy do działania!");
 
         } catch (InterruptedException e) {
