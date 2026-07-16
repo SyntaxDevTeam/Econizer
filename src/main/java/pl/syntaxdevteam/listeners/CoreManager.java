@@ -2,15 +2,18 @@ package pl.syntaxdevteam.listeners;
 
 import net.dv8tion.jda.api.Permission;
 import net.dv8tion.jda.api.entities.Guild;
+import net.dv8tion.jda.api.entities.Role;
+import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
+import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
 import net.dv8tion.jda.api.events.guild.GuildJoinEvent;
 import net.dv8tion.jda.api.events.guild.GuildLeaveEvent;
 import net.dv8tion.jda.api.events.session.ReadyEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
-import net.dv8tion.jda.api.interactions.DiscordLocale;
 import net.dv8tion.jda.api.interactions.commands.DefaultMemberPermissions;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.interactions.commands.build.OptionData;
+import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
 import org.jetbrains.annotations.NotNull;
 
 public class CoreManager extends ListenerAdapter {
@@ -31,6 +34,7 @@ public class CoreManager extends ListenerAdapter {
         for (Guild guild : event.getJDA().getGuilds()) {
             WebAPIManager.reportGuildAction(guild.getId(), guild.getName(), "installed");
             registerCommands(guild);
+            setupAnchorRole(guild);
         }
     }
 
@@ -38,6 +42,7 @@ public class CoreManager extends ListenerAdapter {
     public void onGuildJoin(@NotNull GuildJoinEvent event) {
         WebAPIManager.reportGuildAction(event.getGuild().getId(), event.getGuild().getName(), "installed");
         registerCommands(event.getGuild());
+        setupAnchorRole(event.getGuild());
     }
 
     @Override
@@ -45,84 +50,138 @@ public class CoreManager extends ListenerAdapter {
         WebAPIManager.reportGuildAction(event.getGuild().getId(), event.getGuild().getName(), "removed");
     }
 
+    private void setupAnchorRole(Guild guild) {
+        boolean hasAnchor = guild.getRoles().stream().anyMatch(r -> r.getName().contains("ECONIZER_ANCHOR"));
+        if (!hasAnchor) {
+            try {
+                guild.createRole()
+                        .setName("ECONIZER_ANCHOR [Move Above Users]")
+                        .queue();
+            } catch (Exception ignored) {}
+        }
+    }
+
+    // ==========================================
+    // SYSTEM POWIADOMIEŃ O NOWYM POZIOMIE (DLA KOMEND)
+    // ==========================================
+    public static void sendLevelUpNotification(Guild guild, MessageChannel fallbackChannel, String userId, int newLevel, GuildSettings settings) {
+        MessageChannel targetChannel = fallbackChannel;
+
+        try {
+            if (settings.levelUpChannelId != null && !settings.levelUpChannelId.isEmpty()) {
+                TextChannel configuredChannel = guild.getTextChannelById(settings.levelUpChannelId);
+                if (configuredChannel != null) {
+                    targetChannel = configuredChannel;
+                }
+            }
+            targetChannel.sendMessage("🎉 Gratulacje <@" + userId + ">! Właśnie awansowałeś na **" + newLevel + "** poziom!").queue();
+        } catch (Exception e) {
+            try {
+                fallbackChannel.sendMessage("🎉 Gratulacje <@" + userId + ">! Właśnie awansowałeś na **" + newLevel + "** poziom!").queue();
+            } catch (Exception ignored) {}
+        }
+    }
+
     private void registerCommands(Guild guild) {
+        String guildId = guild.getId();
+        GuildSettings settings = db.getGuildSettings(guildId);
+
         guild.updateCommands().addCommands(
-                localized(Commands.slash("profil", "Check account status and level")
-                        .addOption(OptionType.USER, "uzytkownik", "User to check", false),
+                localized(settings, Commands.slash("profile", "Check account status and level")
+                                .addOption(OptionType.USER, "user", "User to check", false),
                         "Sprawdź stan konta i poziom", "Kogo sprawdzić"),
-                localized(Commands.slash("work", "Work to earn currency"),
+
+                localized(settings, Commands.slash("work", "Work to earn currency"),
                         "Podejmij pracę i zarób walutę", null),
-                localized(Commands.slash("daily", "Claim your daily reward"),
+
+                localized(settings, Commands.slash("daily", "Claim your daily reward"),
                         "Odbierz codzienną nagrodę", null),
-                localized(Commands.slash("zaplac", "Transfer currency to a player")
-                        .addOptions(
-                                new OptionData(OptionType.USER, "gracz", "Recipient", true),
-                                new OptionData(OptionType.INTEGER, "kwota", "Amount", true)),
+
+                localized(settings, Commands.slash("pay", "Transfer currency to a player")
+                                .addOptions(
+                                        new OptionData(OptionType.USER, "player", "Recipient", true),
+                                        new OptionData(OptionType.INTEGER, "amount", "Amount to transfer", true)),
                         "Przelej walutę graczowi", null),
-                localized(Commands.slash("dodajkase", "[ADMIN] Add coins")
-                        .setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.ADMINISTRATOR))
-                        .addOptions(
-                                new OptionData(OptionType.USER, "gracz", "Recipient", true),
-                                new OptionData(OptionType.INTEGER, "kwota", "Amount", true)),
+
+                localized(settings, Commands.slash("addmoney", "[ADMIN] Add coins to a player")
+                                .setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.ADMINISTRATOR))
+                                .addOptions(
+                                        new OptionData(OptionType.USER, "player", "Recipient", true),
+                                        new OptionData(OptionType.INTEGER, "amount", "Amount to add", true)),
                         "[ADMIN] Dodaj monety", null),
-                localized(Commands.slash("bank", "Manage your bank account")
-                        .addOptions(
-                                new OptionData(OptionType.STRING, "operacja", "Operation", true)
-                                        .addChoice("Deposit", "wplac").addChoice("Withdraw", "wyplac"),
-                                new OptionData(OptionType.INTEGER, "kwota", "Amount", true)),
+
+                localized(settings, Commands.slash("bank", "Manage your bank account")
+                                .addOptions(
+                                        new OptionData(OptionType.STRING, "operation", "Operation type", true)
+                                                .addChoice("Deposit", "deposit")
+                                                .addChoice("Withdraw", "withdraw"),
+                                        new OptionData(OptionType.INTEGER, "amount", "Amount", true)),
                         "Zarządzaj kontem bankowym", null),
-                localized(Commands.slash("sklep", "Open the server shop"),
+
+                localized(settings, Commands.slash("shop", "Open the server shop"),
                         "Otwórz sklep serwerowy", null),
-                localized(Commands.slash("statystyki", "Global bot statistics"),
+
+                localized(settings, Commands.slash("stats", "Global bot statistics"),
                         "Globalne statystyki bota", null),
-                localized(Commands.slash("coinflip", "Casino coinflip game")
-                        .addOption(OptionType.INTEGER, "kwota", "Bet amount", true),
-                        "Gra z kasynem", null),
-                localized(Commands.slash("pets", "Interactive pet panel"),
+
+                localized(settings, Commands.slash("coinflip", "Casino coinflip game")
+                                .addOption(OptionType.INTEGER, "amount", "Bet amount", true),
+                        "Gra losowa z kasynem", null),
+
+                localized(settings, Commands.slash("pets", "Interactive pet panel"),
                         "Panel interaktywny Twojego zwierzaka", null),
-                localized(Commands.slash("napad", "Organize a heist on the Server Bank!"),
-                        "Zorganizuj napad na Bank Serwera!", null),
-                localized(Commands.slash("okradnij", "Try to rob a player (cash only)")
-                        .addOption(OptionType.USER, "ofiara", "Victim", true),
+
+                localized(settings, Commands.slash("heist", "Organize a team heist on the Server Bank!")
+                                .addOption(OptionType.INTEGER, "team", "Team size (min 2, max 5)", false),
+                        "Zorganizuj napad na Bank Serwera!", "Rozmiar ekipy (2-5, domyślnie 2)"),
+
+                localized(settings, Commands.slash("rob", "Try to rob a player (cash only)")
+                                .addOption(OptionType.USER, "victim", "Victim to rob", true),
                         "Spróbuj okraść gracza (tylko z gotówki)", "Kogo okradamy"),
-                localized(Commands.slash("bounty", "Post a bounty on a wanted player")
-                        .addOptions(
-                                new OptionData(OptionType.USER, "gracz", "Wanted player", true),
-                                new OptionData(OptionType.INTEGER, "kwota", "Reward", true)),
+
+                localized(settings, Commands.slash("bounty", "Post a bounty on a wanted player")
+                                .addOptions(
+                                        new OptionData(OptionType.USER, "player", "Wanted player", true),
+                                        new OptionData(OptionType.INTEGER, "amount", "Reward amount", true)),
                         "Wystaw nagrodę za głowę poszukiwanego gracza", null),
-                localized(Commands.slash("poluj", "Hunt a wanted player for bounty")
-                        .addOption(OptionType.USER, "gracz", "Target", true),
+
+                localized(settings, Commands.slash("hunt", "Hunt a wanted player for bounty")
+                                .addOption(OptionType.USER, "player", "Target player", true),
                         "Spróbuj upolować poszukiwanego i zgarnąć bounty", "Na kogo polujesz"),
-                localized(Commands.slash("firma", "Interactive labor office - manage companies"),
+
+                localized(settings, Commands.slash("company", "Interactive labor office - manage companies"),
                         "Interaktywny Urząd Pracy - Zarządzaj firmami", null),
-                localized(Commands.slash("dashboard", "Open your player dashboard on the website"),
+
+                localized(settings, Commands.slash("dashboard", "Open your player dashboard on the website"),
                         "Otwórz swój główny panel gracza na stronie WWW", null),
-                localized(Commands.slash("konfiguracja", "[ADMIN] Open server management panel on the website")
-                        .setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.ADMINISTRATOR)),
+
+                localized(settings, Commands.slash("config", "[ADMIN] Open server management panel on the website")
+                                .setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.ADMINISTRATOR)),
                         "[ADMIN] Otwórz panel zarządzania serwerem na stronie WWW", null),
-                localized(Commands.slash("reseteco", "[ADMIN] End season (FULL SERVER ECONOMY RESET)")
-                        .setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.ADMINISTRATOR))
-                        .addOptions(new OptionData(OptionType.BOOLEAN, "potwierdzenie", "Select True", true)),
+
+                localized(settings, Commands.slash("reseteco", "[ADMIN] End season (FULL SERVER ECONOMY RESET)")
+                                .setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.ADMINISTRATOR))
+                                .addOptions(new OptionData(OptionType.BOOLEAN, "confirm", "Select True", true)),
                         "[ADMIN] Zakończ sezon (CAŁKOWITY RESET EKONOMII SERWERA)", "Wybierz True"),
-                localized(Commands.slash("gielda", "Manage your stock portfolio")
-                        .addOptions(
-                                new OptionData(OptionType.STRING, "operacja", "Operation", true)
-                                        .addChoice("📊 Check market", "sprawdz")
-                                        .addChoice("📈 Buy shares", "kup")
-                                        .addChoice("📉 Sell shares", "sprzedaj"),
-                                new OptionData(OptionType.STRING, "akcja", "Stock symbol", false),
-                                new OptionData(OptionType.INTEGER, "ilosc", "Quantity", false)),
+
+                localized(settings, Commands.slash("market", "Manage your stock portfolio")
+                                .addOptions(
+                                        new OptionData(OptionType.STRING, "operation", "Operation type", true)
+                                                .addChoice("📊 Check market", "check")
+                                                .addChoice("📈 Buy shares", "buy")
+                                                .addChoice("📉 Sell shares", "sell"),
+                                        new OptionData(OptionType.STRING, "symbol", "Stock symbol", false),
+                                        new OptionData(OptionType.INTEGER, "quantity", "Quantity", false)),
                         "Zarządzaj swoim portfelem akcji", null)
         ).queue();
     }
 
-    private static net.dv8tion.jda.api.interactions.commands.build.SlashCommandData localized(
-            net.dv8tion.jda.api.interactions.commands.build.SlashCommandData cmd,
-            String plDescription, String plOptionDesc) {
-        cmd.setDescriptionLocalization(DiscordLocale.POLISH, plDescription);
-        if (plOptionDesc != null && !cmd.getOptions().isEmpty()) {
-            cmd.getOptions().get(cmd.getOptions().size() - 1)
-                    .setDescriptionLocalization(DiscordLocale.POLISH, plOptionDesc);
+    private static SlashCommandData localized(GuildSettings settings, SlashCommandData cmd, String plDescription, String plOptionDesc) {
+        if (settings.language != null && settings.language.equalsIgnoreCase("pl")) {
+            cmd.setDescription(plDescription);
+            if (plOptionDesc != null && !cmd.getOptions().isEmpty()) {
+                cmd.getOptions().get(cmd.getOptions().size() - 1).setDescription(plOptionDesc);
+            }
         }
         return cmd;
     }

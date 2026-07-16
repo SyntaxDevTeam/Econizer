@@ -12,8 +12,8 @@ import net.dv8tion.jda.api.components.buttons.Button;
 import org.jetbrains.annotations.NotNull;
 
 import java.awt.Color;
-import java.sql.Connection;
-import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.Random;
 
 public class EconomyManager extends ListenerAdapter {
@@ -35,7 +35,7 @@ public class EconomyManager extends ListenerAdapter {
         }
         db.logCommandUsage(cmd, guildId);
 
-        if (cmd.equals("sklep")) {
+        if (cmd.equals("shop")) {
             String shopUrl = settings.shopBaseUrl + guildId;
             event.replyEmbeds(new EmbedBuilder().setColor(Color.decode("#9B59B6"))
                     .setAuthor(LanguageManager.t(settings, "shop_author"), null, event.getJDA().getSelfUser().getEffectiveAvatarUrl())
@@ -51,7 +51,7 @@ public class EconomyManager extends ListenerAdapter {
             return;
         }
 
-        if (cmd.equals("konfiguracja")) {
+        if (cmd.equals("config")) {
             if (event.getMember() != null && !event.getMember().hasPermission(Permission.ADMINISTRATOR)) {
                 event.reply(LanguageManager.t(settings, "config_no_perm")).setEphemeral(true).queue();
                 return;
@@ -68,7 +68,7 @@ public class EconomyManager extends ListenerAdapter {
                 event.reply(LanguageManager.t(settings, "admin_err_perm")).setEphemeral(true).queue();
                 return;
             }
-            if (!event.getOption("potwierdzenie").getAsBoolean()) {
+            if (!event.getOption("confirm").getAsBoolean()) {
                 event.reply(LanguageManager.t(settings, "reset_confirm_fail")).setEphemeral(true).queue();
                 return;
             }
@@ -81,7 +81,7 @@ public class EconomyManager extends ListenerAdapter {
             return;
         }
 
-        if (cmd.equals("statystyki")) {
+        if (cmd.equals("stats")) {
             long[] stats = db.getBotStatistics();
             int serverCount = event.getJDA().getGuilds().size();
             EmbedBuilder eb = new EmbedBuilder().setColor(Color.decode("#9B59B6"))
@@ -95,13 +95,13 @@ public class EconomyManager extends ListenerAdapter {
         }
 
         if (cmd.equals("bank")) {
-            String op = event.getOption("operacja").getAsString();
-            int kwota = event.getOption("kwota").getAsInt();
+            String op = event.getOption("operation").getAsString();
+            int kwota = event.getOption("amount").getAsInt();
             if (kwota <= 0) {
                 event.reply(LanguageManager.t(settings, "err_amount")).setEphemeral(true).queue();
                 return;
             }
-            if (op.equals("wplac")) {
+            if (op.equals("deposit") || op.equals("wplac")) {
                 if (db.removeCoins(guildId, userId, kwota, "gotowka")) {
                     int netto = (int) (kwota * 0.95);
                     db.addBankCoins(guildId, userId, netto);
@@ -120,20 +120,41 @@ public class EconomyManager extends ListenerAdapter {
             return;
         }
 
-        if (cmd.equals("profil")) {
-            OptionMapping uOpt = event.getOption("uzytkownik");
+        if (cmd.equals("profile")) {
+            OptionMapping uOpt = event.getOption("user");
             User target = uOpt != null ? uOpt.getAsUser() : event.getUser();
             if (target.isBot()) {
                 event.reply(LanguageManager.t(settings, "bot_profile")).setEphemeral(true).queue();
                 return;
             }
             int[] userStats = db.getUserStats(guildId, target.getId());
+
             int petId = db.getUserPetId(guildId, target.getId());
             String petName = LanguageManager.t(settings, "profile_pet_none");
             if (petId > 0) {
                 Object[] c = db.getPetConfig(guildId, petId, settings.isPremium);
                 if (c != null) petName = (String) c[0];
             }
+
+            String companyDisplay = "Brak";
+            try (PreparedStatement pstmt = db.getConnection().prepareStatement(
+                    "SELECT c.name, c.owner_id FROM bot_employees e JOIN bot_companies c ON e.company_id = c.id WHERE e.guild_id = ? AND e.user_id = ?")) {
+                pstmt.setString(1, guildId);
+                pstmt.setString(2, target.getId());
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    String compName = rs.getString("name");
+                    String ownerId = rs.getString("owner_id");
+                    if (target.getId().equals(ownerId)) {
+                        companyDisplay = "**" + compName + "**\n(👑 Właściciel)";
+                    } else {
+                        companyDisplay = "**" + compName + "**\n(👷 Pracownik)";
+                    }
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
             EmbedBuilder eb = new EmbedBuilder().setColor(Color.decode("#F1C40F"))
                     .setAuthor(LanguageManager.t(settings, "profile_author", target.getName()), null, target.getEffectiveAvatarUrl())
                     .setThumbnail(target.getEffectiveAvatarUrl())
@@ -141,7 +162,9 @@ public class EconomyManager extends ListenerAdapter {
                     .addField(LanguageManager.t(settings, "profile_field_bank"), "`" + userStats[3] + "` " + settings.currencyEmoji, true)
                     .addField(LanguageManager.t(settings, "profile_field_level"), "Lvl `" + userStats[1] + "`", true)
                     .addField(LanguageManager.t(settings, "profile_field_exp"), "`" + userStats[2] + " / " + (userStats[1] * 100) + "` XP", false)
-                    .addField(LanguageManager.t(settings, "profile_field_pet"), "**" + petName + "**", false);
+                    .addField(LanguageManager.t(settings, "profile_field_pet"), "**" + petName + "**", true)
+                    .addField("🏢 Firma", companyDisplay, true);
+
             event.replyEmbeds(eb.build()).queue();
             return;
         }
@@ -154,22 +177,32 @@ public class EconomyManager extends ListenerAdapter {
                 return;
             }
             double[] mults = db.getActiveMultipliers(guildId, userId);
-            int earned = (int) ((random.nextInt((settings.maxWork - settings.minWork) + 1) + settings.minWork) * mults[0]);
-            int exp = (int) ((random.nextInt(21) + 20) * mults[1]);
-            db.addCoins(guildId, userId, earned, "WORK");
-            db.setCooldown(guildId, userId, "work", cur + 600000);
-            int newLvl = db.addExpAndCheckLevel(guildId, userId, exp);
 
-            try (Connection conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/econizer", "root", "twoje_haslo")) {
-                CompanyManager.handleEmployeeWork(conn, guildId, userId, earned);
-            } catch (Exception ignored) {}
+            double compBonus = CompanyManager.getEmployeeBonusMultiplier(db, guildId, userId);
+
+            int baseEarned = (int) ((random.nextInt((settings.maxWork - settings.minWork) + 1) + settings.minWork) * mults[0]);
+            int finalEarned = (int) (baseEarned * compBonus);
+            int exp = (int) ((random.nextInt(21) + 20) * mults[1]);
+
+            db.addCoins(guildId, userId, finalEarned, "WORK");
+            db.setCooldown(guildId, userId, "work", cur + 600000);
+
+            int newLvl = db.addExpAndCheckLevel(guildId, userId, exp);
+            if (newLvl > 0) {
+                // Wywołanie zewnętrznego powiadomienia o awansie
+                CoreManager.sendLevelUpNotification(event.getGuild(), event.getChannel(), userId, newLvl, settings);
+            }
+
+            CompanyManager.addCompanyRevenue(db, guildId, userId, finalEarned);
 
             EmbedBuilder eb = new EmbedBuilder().setColor(Color.decode("#2ECC71"))
                     .setAuthor(LanguageManager.t(settings, "work_author", event.getUser().getName()), null, event.getUser().getEffectiveAvatarUrl())
                     .setThumbnail(event.getUser().getEffectiveAvatarUrl())
-                    .setDescription(LanguageManager.t(settings, "work_desc", userId, earned, settings.currencyEmoji, exp));
+                    .setDescription(LanguageManager.t(settings, "work_desc", userId, finalEarned, settings.currencyEmoji, exp));
+
             if (mults[0] > 1.0) eb.appendDescription(LanguageManager.t(settings, "pet_bonus"));
-            if (newLvl > 0) eb.appendDescription(LanguageManager.t(settings, "level_up", newLvl));
+            if (compBonus > 1.0) eb.appendDescription("\n🏢 Otrzymujesz **+" + (int)Math.round((compBonus - 1.0) * 100) + "%** premii za pracę w firmie!");
+
             event.replyEmbeds(eb.build()).queue();
             return;
         }
@@ -182,25 +215,39 @@ public class EconomyManager extends ListenerAdapter {
                 return;
             }
             double[] mults = db.getActiveMultipliers(guildId, userId);
-            int earned = (int) (settings.dailyAmount * mults[0]);
+
+            double compBonus = CompanyManager.getEmployeeBonusMultiplier(db, guildId, userId);
+
+            int baseEarned = (int) (settings.dailyAmount * mults[0]);
+            int finalEarned = (int) (baseEarned * compBonus);
             int exp = (int) ((random.nextInt(101) + 150) * mults[1]);
-            db.addCoins(guildId, userId, earned, "DAILY");
+
+            db.addCoins(guildId, userId, finalEarned, "DAILY");
             db.setCooldown(guildId, userId, "daily", cur + 86400000);
+
             int newLvl = db.addExpAndCheckLevel(guildId, userId, exp);
+            if (newLvl > 0) {
+                // Wywołanie zewnętrznego powiadomienia o awansie
+                CoreManager.sendLevelUpNotification(event.getGuild(), event.getChannel(), userId, newLvl, settings);
+            }
+
+            CompanyManager.addCompanyRevenue(db, guildId, userId, finalEarned);
 
             EmbedBuilder eb = new EmbedBuilder().setColor(Color.decode("#3498DB"))
                     .setAuthor(LanguageManager.t(settings, "daily_author"), null, event.getUser().getEffectiveAvatarUrl())
                     .setThumbnail(event.getUser().getEffectiveAvatarUrl())
-                    .setDescription(LanguageManager.t(settings, "daily_desc", userId, earned, settings.currencyEmoji, exp));
+                    .setDescription(LanguageManager.t(settings, "daily_desc", userId, finalEarned, settings.currencyEmoji, exp));
+
             if (mults[0] > 1.0) eb.appendDescription(LanguageManager.t(settings, "daily_pet_bonus"));
-            if (newLvl > 0) eb.appendDescription(LanguageManager.t(settings, "level_up", newLvl));
+            if (compBonus > 1.0) eb.appendDescription("\n🏢 Otrzymujesz **+" + (int)Math.round((compBonus - 1.0) * 100) + "%** premii za pracę w firmie!");
+
             event.replyEmbeds(eb.build()).queue();
             return;
         }
 
-        if (cmd.equals("zaplac")) {
-            User target = event.getOption("gracz").getAsUser();
-            int amt = event.getOption("kwota").getAsInt();
+        if (cmd.equals("pay")) {
+            User target = event.getOption("player").getAsUser();
+            int amt = event.getOption("amount").getAsInt();
             if (target.isBot() || target.getId().equals(userId) || amt <= 0) {
                 event.reply(LanguageManager.t(settings, "pay_err_params")).setEphemeral(true).queue();
                 return;
@@ -221,7 +268,7 @@ public class EconomyManager extends ListenerAdapter {
         }
 
         if (cmd.equals("coinflip")) {
-            int amt = event.getOption("kwota").getAsInt();
+            int amt = event.getOption("amount").getAsInt();
             if (amt <= 0) {
                 event.reply(LanguageManager.t(settings, "cf_err_stake")).setEphemeral(true).queue();
                 return;
@@ -236,13 +283,13 @@ public class EconomyManager extends ListenerAdapter {
             return;
         }
 
-        if (cmd.equals("dodajkase")) {
+        if (cmd.equals("addmoney")) {
             if (event.getMember() != null && !event.getMember().hasPermission(Permission.ADMINISTRATOR)) {
                 event.reply(LanguageManager.t(settings, "admin_err_perm")).setEphemeral(true).queue();
                 return;
             }
-            User target = event.getOption("gracz").getAsUser();
-            int amt = event.getOption("kwota").getAsInt();
+            User target = event.getOption("player").getAsUser();
+            int amt = event.getOption("amount").getAsInt();
             if (amt <= 0) {
                 event.reply(LanguageManager.t(settings, "err_amount")).setEphemeral(true).queue();
                 return;

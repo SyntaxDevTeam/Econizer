@@ -19,10 +19,12 @@ public class PetManager extends ListenerAdapter {
 
     @Override
     public void onSlashCommandInteraction(@NotNull SlashCommandInteractionEvent event) {
-        if (!event.getName().equals("pets")) return;
         String guildId = event.getGuild().getId();
         String userId = event.getUser().getId();
         GuildSettings settings = db.getGuildSettings(guildId);
+
+        // GŁÓWNY PANEL ZWIERZAKA
+        if (!event.getName().equals("pets")) return;
 
         if (!settings.economyEnabled || !db.isPetsEnabled(guildId)) {
             event.reply(LanguageManager.t(settings, "pet_disabled")).setEphemeral(true).queue();
@@ -33,11 +35,20 @@ public class PetManager extends ListenerAdapter {
                 .setAuthor(LanguageManager.t(settings, "pet_title"), null, event.getUser().getEffectiveAvatarUrl())
                 .setDescription(LanguageManager.t(settings, "pet_desc"));
 
-        event.replyEmbeds(eb.build()).addComponents(ActionRow.of(
-                Button.primary("pet_buy:" + userId, LanguageManager.t(settings, "pet_btn_buy")),
-                Button.success("pet_feed_prompt:" + userId, LanguageManager.t(settings, "pet_btn_feed")),
-                Button.secondary("pet_status:" + userId, LanguageManager.t(settings, "pet_btn_status"))
-        )).setEphemeral(true).queue();
+        int myPetId = db.getUserPetId(guildId, userId);
+        List<Button> buttons = new ArrayList<>();
+
+        if (myPetId > 0) {
+            // Ma zwierzaka - pokazujemy nakarm, status, wypuść
+            buttons.add(Button.success("pet_feed_prompt:" + userId, LanguageManager.t(settings, "pet_btn_feed")));
+            buttons.add(Button.secondary("pet_status:" + userId, LanguageManager.t(settings, "pet_btn_status")));
+            buttons.add(Button.danger("pet_release:" + userId, "👋 Wypuść zwierzaka"));
+        } else {
+            // Nie ma zwierzaka - pokazujemy tylko przycisk kupna
+            buttons.add(Button.primary("pet_buy:" + userId, LanguageManager.t(settings, "pet_btn_buy")));
+        }
+
+        event.replyEmbeds(eb.build()).addComponents(ActionRow.of(buttons)).setEphemeral(true).queue();
     }
 
     @Override
@@ -45,6 +56,7 @@ public class PetManager extends ListenerAdapter {
         String[] parts = event.getComponentId().split(":");
         String action = parts[0];
         if (!action.startsWith("pet_") && !action.startsWith("buy_pay_") && !action.startsWith("feed_pay_")) return;
+
         String guildId = event.getGuild().getId();
         String userId = event.getUser().getId();
         GuildSettings settings = db.getGuildSettings(guildId);
@@ -55,6 +67,13 @@ public class PetManager extends ListenerAdapter {
         }
 
         switch (action) {
+            case "pet_release":
+                db.removeUserPet(guildId, userId);
+                event.editMessageEmbeds(new EmbedBuilder().setColor(Color.RED)
+                                .setDescription("👋 Wypuściłeś swojego zwierzaka na wolność! Możesz teraz adoptować nowego.").build())
+                        .setComponents().queue();
+                break;
+
             case "pet_buy":
                 if (db.getUserPetId(guildId, userId) > 0) {
                     event.reply(LanguageManager.t(settings, "pet_err_has_pet")).setEphemeral(true).queue();
@@ -62,19 +81,30 @@ public class PetManager extends ListenerAdapter {
                 }
                 EmbedBuilder shopEmbed = new EmbedBuilder().setColor(Color.decode("#E67E22"))
                         .setAuthor(LanguageManager.t(settings, "pet_shop_title"), null, event.getUser().getEffectiveAvatarUrl());
+
                 List<Button> buttons = new ArrayList<>();
                 for (Object[] pet : db.getAllPets(guildId, settings.isPremium)) {
-                    shopEmbed.addField(pet[0] + ". " + pet[1],
+                    shopEmbed.addField("ID: " + pet[0] + " | " + pet[1],
                             LanguageManager.t(settings, "pet_shop_field", pet[4], settings.currencyEmoji, pet[2], pet[3]), false);
                     buttons.add(Button.primary("pet_buy_select:" + pet[0] + ":" + userId,
                             LanguageManager.t(settings, "pet_btn_select", pet[1])));
                 }
-                event.editMessageEmbeds(shopEmbed.build()).setComponents(ActionRow.of(buttons)).queue();
+
+                if (buttons.isEmpty()) {
+                    shopEmbed.setDescription("Brak zwierzaków w sklepie.");
+                    event.editMessageEmbeds(shopEmbed.build()).setComponents().queue();
+                } else {
+                    event.editMessageEmbeds(shopEmbed.build()).setComponents(ActionRow.of(buttons)).queue();
+                }
                 break;
 
             case "pet_buy_select":
                 int selectId = Integer.parseInt(parts[1]);
                 Object[] pConf = db.getPetConfig(guildId, selectId, settings.isPremium);
+                if (pConf == null) {
+                    event.reply("Ten zwierzak nie istnieje!").setEphemeral(true).queue();
+                    return;
+                }
                 int cost = (int) pConf[4];
                 event.editMessageEmbeds(new EmbedBuilder().setColor(Color.orange)
                                 .setDescription(LanguageManager.t(settings, "pet_pay_prompt", pConf[0], cost, settings.currencyEmoji)).build())

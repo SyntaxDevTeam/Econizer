@@ -19,7 +19,7 @@ public class MarketManager extends ListenerAdapter {
 
     @Override
     public void onSlashCommandInteraction(@NotNull SlashCommandInteractionEvent event) {
-        if (!event.getName().equals("gielda")) return;
+        if (!event.getName().equals("market")) return;
         String guildId = event.getGuild().getId();
         String userId = event.getUser().getId();
         GuildSettings settings = db.getGuildSettings(guildId);
@@ -29,12 +29,12 @@ public class MarketManager extends ListenerAdapter {
             return;
         }
 
-        String op = event.getOption("operacja").getAsString();
-        OptionMapping aOpt = event.getOption("akcja");
-        OptionMapping iOpt = event.getOption("ilosc");
+        String op = event.getOption("operation").getAsString();
+        OptionMapping aOpt = event.getOption("symbol");
+        OptionMapping iOpt = event.getOption("quantity");
         Map<String, Integer> stocks = db.getAndRefreshStocks(guildId);
 
-        if (op.equals("sprawdz")) {
+        if (op.equals("check") || op.equals("sprawdz")) {
             EmbedBuilder eb = new EmbedBuilder().setColor(Color.decode("#2980B9"))
                     .setAuthor(LanguageManager.t(settings, "market_title"), null, event.getUser().getEffectiveAvatarUrl());
             if (stocks.isEmpty()) {
@@ -62,7 +62,7 @@ public class MarketManager extends ListenerAdapter {
         }
 
         int totalCost = stocks.get(ticker) * ilosc;
-        if (op.equals("kup")) {
+        if (op.equals("buy") || op.equals("kup")) {
             event.reply(LanguageManager.t(settings, "market_buy_prompt", ilosc, ticker, totalCost, settings.currencyEmoji))
                     .addComponents(ActionRow.of(
                             Button.success("st_b_cash:" + ticker + ":" + ilosc + ":" + totalCost, LanguageManager.t(settings, "btn_wallet")),
