@@ -12,12 +12,13 @@ public class DatabaseManager {
     private Connection connection;
     private final Random random = new Random();
 
-    // DANE LOGOWANIA DO BAZY MYSQL
-    private final String DB_HOST = "localhost";
-    private final String DB_PORT = "3306";
-    private final String DB_NAME = "econizer";
-    private final String DB_USER = "bot_econizer";
-    private final String DB_PASS = "BJTVp-/g[z-a0*yy";
+    // Pobieranie danych z ENV z fallbackiem na stare, zakodowane na sztywno dane.
+    // Zdecydowanie zalecam przenieść te dane do pliku .env!
+    private final String DB_HOST = System.getenv("DB_HOST") != null ? System.getenv("DB_HOST") : "localhost";
+    private final String DB_PORT = System.getenv("DB_PORT") != null ? System.getenv("DB_PORT") : "3306";
+    private final String DB_NAME = System.getenv("DB_NAME") != null ? System.getenv("DB_NAME") : "econizer";
+    private final String DB_USER = System.getenv("DB_USER") != null ? System.getenv("DB_USER") : "bot_econizer";
+    private final String DB_PASS = System.getenv("DB_PASS") != null ? System.getenv("DB_PASS") : "BJTVp-/g[z-a0*yy";
 
     public void connect() {
         try {
@@ -43,7 +44,7 @@ public class DatabaseManager {
                     "economy_enabled INT DEFAULT 1, " +
                     "pets_enabled INT DEFAULT 1, " +
                     "is_premium INT DEFAULT 0, " +
-                    "language VARCHAR(10) DEFAULT 'eng', " +
+                    "language VARCHAR(10) DEFAULT 'pl', " +
                     "currency_name VARCHAR(50) DEFAULT 'coins', " +
                     "currency_emoji VARCHAR(50) DEFAULT '🪙', " +
                     "daily_amount INT DEFAULT 200, " +
@@ -72,11 +73,18 @@ public class DatabaseManager {
             try { stmt.execute("ALTER TABLE bot_guild_settings ADD COLUMN vip_role_id VARCHAR(64) DEFAULT NULL;"); } catch (SQLException ignored) {}
             try { stmt.execute("ALTER TABLE bot_guild_settings ADD COLUMN shop_base_url VARCHAR(255) DEFAULT 'https://econizer.syntaxdevteam.pl/econizer/shop/';"); } catch (SQLException ignored) {}
 
-            // AUTO-AKTUALIZACJA DLA NOWYCH FUNKCJI FIRMY (WWW)
             try { stmt.execute("ALTER TABLE bot_guild_settings ADD COLUMN comp_cost INT DEFAULT 25000;"); } catch (SQLException ignored) {}
             try { stmt.execute("ALTER TABLE bot_guild_settings ADD COLUMN company_roles_enabled INT DEFAULT 1;"); } catch (SQLException ignored) {}
             try { stmt.execute("ALTER TABLE bot_guild_settings ADD COLUMN company_tags_enabled INT DEFAULT 1;"); } catch (SQLException ignored) {}
             try { stmt.execute("ALTER TABLE bot_guild_settings ADD COLUMN company_chat_enabled INT DEFAULT 1;"); } catch (SQLException ignored) {}
+
+            try { stmt.execute("ALTER TABLE bot_guild_settings ADD COLUMN daily_amount_2 INT DEFAULT 6000;"); } catch (SQLException ignored) {}
+            try { stmt.execute("ALTER TABLE bot_guild_settings ADD COLUMN daily_amount_3 INT DEFAULT 15000;"); } catch (SQLException ignored) {}
+
+            // WEB PANEL READY: Kolumny zarządzające widocznością odpowiedzi na komendy
+            try { stmt.execute("ALTER TABLE bot_guild_settings ADD COLUMN hide_economy_replies INT DEFAULT 0;"); } catch (SQLException ignored) {}
+            try { stmt.execute("ALTER TABLE bot_guild_settings ADD COLUMN hide_crime_replies INT DEFAULT 0;"); } catch (SQLException ignored) {}
+            try { stmt.execute("ALTER TABLE bot_guild_settings ADD COLUMN hide_company_replies INT DEFAULT 1;"); } catch (SQLException ignored) {}
 
             stmt.execute("CREATE TABLE IF NOT EXISTS bot_guild_pets (guild_id VARCHAR(64), pet_id INT, name VARCHAR(100), coin_mult DOUBLE, exp_mult DOUBLE, price INT, PRIMARY KEY (guild_id, pet_id));");
             stmt.execute("CREATE TABLE IF NOT EXISTS bot_guild_blocked_words (guild_id VARCHAR(64), word VARCHAR(100), PRIMARY KEY (guild_id, word));");
@@ -99,6 +107,11 @@ public class DatabaseManager {
 
             try { stmt.execute("ALTER TABLE bot_user_activity ADD COLUMN robbery_last_used BIGINT DEFAULT 0;"); } catch (SQLException ignored) {}
             try { stmt.execute("ALTER TABLE bot_user_activity ADD COLUMN hunt_last_used BIGINT DEFAULT 0;"); } catch (SQLException ignored) {}
+
+            try { stmt.execute("ALTER TABLE bot_user_activity ADD COLUMN loan_amount INT DEFAULT 0;"); } catch (SQLException ignored) {}
+            try { stmt.execute("ALTER TABLE bot_user_activity ADD COLUMN loan_taken_at BIGINT DEFAULT 0;"); } catch (SQLException ignored) {}
+            try { stmt.execute("ALTER TABLE bot_user_activity ADD COLUMN loan_last_interest BIGINT DEFAULT 0;"); } catch (SQLException ignored) {}
+            try { stmt.execute("ALTER TABLE bot_user_activity ADD COLUMN deposit_last_claim BIGINT DEFAULT 0;"); } catch (SQLException ignored) {}
 
             stmt.execute("CREATE TABLE IF NOT EXISTS bot_bounties (guild_id VARCHAR(64), user_id VARCHAR(64), amount INT DEFAULT 0, PRIMARY KEY (guild_id, user_id));");
             stmt.execute("CREATE TABLE IF NOT EXISTS bot_companies (id INT PRIMARY KEY AUTO_INCREMENT, guild_id VARCHAR(64), name VARCHAR(100), owner_id VARCHAR(64), vault INT DEFAULT 0, split_owner INT DEFAULT 70, split_emp INT DEFAULT 30);");
@@ -137,6 +150,8 @@ public class DatabaseManager {
                 settings.currencyName = rs.getString("currency_name");
                 settings.currencyEmoji = rs.getString("currency_emoji");
                 settings.dailyAmount = rs.getInt("daily_amount");
+                try { settings.dailyAmount2 = rs.getInt("daily_amount_2"); } catch (SQLException ignored) {}
+                try { settings.dailyAmount3 = rs.getInt("daily_amount_3"); } catch (SQLException ignored) {}
                 settings.minWork = rs.getInt("min_work");
                 settings.maxWork = rs.getInt("max_work");
                 settings.transferTax = rs.getDouble("transfer_tax");
@@ -145,12 +160,16 @@ public class DatabaseManager {
                 settings.autoroleId = rs.getString("autorole_id");
                 settings.welcomeChannelId = rs.getString("welcome_channel_id");
                 settings.welcomeMessage = rs.getString("welcome_message");
-
                 settings.maxShopItems = rs.getInt("max_shop_items");
                 settings.petsPanelImage = rs.getString("pets_panel_image");
                 settings.passiveIncomeAmount = rs.getInt("passive_income_amount");
                 settings.vipRoleId = rs.getString("vip_role_id");
                 settings.shopBaseUrl = rs.getString("shop_base_url");
+
+                // WEB PANEL READY: Pobieranie flag widoczności
+                try { settings.hideEconomyReplies = rs.getBoolean("hide_economy_replies"); } catch (SQLException ignored) {}
+                try { settings.hideCrimeReplies = rs.getBoolean("hide_crime_replies"); } catch (SQLException ignored) {}
+                try { settings.hideCompanyReplies = rs.getBoolean("hide_company_replies"); } catch (SQLException ignored) {}
             } else {
                 try (PreparedStatement ins = connection.prepareStatement("INSERT INTO bot_guild_settings (guild_id) VALUES (?)")) {
                     ins.setString(1, guildId);
@@ -199,11 +218,111 @@ public class DatabaseManager {
         } catch (SQLException e) { e.printStackTrace(); } return new int[]{0, 1, 0, 0};
     }
 
-    public void addCoins(String guildId, String userId, int amount, String type) {
+    public long[] getBankData(String guildId, String userId) {
         ensureConnection(); checkAndCreateUser(guildId, userId);
-        try (PreparedStatement pstmt = connection.prepareStatement("UPDATE bot_user_activity SET coins = coins + ? WHERE guild_id = ? AND user_id = ?")) {
-            pstmt.setInt(1, amount); pstmt.setString(2, guildId); pstmt.setString(3, userId); pstmt.executeUpdate();
+        try (PreparedStatement pstmt = connection.prepareStatement("SELECT bank_coins, loan_amount, deposit_last_claim, loan_taken_at, level, coins FROM bot_user_activity WHERE guild_id = ? AND user_id = ?")) {
+            pstmt.setString(1, guildId); pstmt.setString(2, userId);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) return new long[]{rs.getLong("bank_coins"), rs.getLong("loan_amount"), rs.getLong("deposit_last_claim"), rs.getLong("loan_taken_at"), rs.getLong("level"), rs.getLong("coins")};
         } catch (SQLException e) { e.printStackTrace(); }
+        return new long[]{0, 0, 0, 0, 1, 0};
+    }
+
+    public void takeLoan(String guildId, String userId, int amount) {
+        ensureConnection();
+        try (PreparedStatement pstmt = connection.prepareStatement("UPDATE bot_user_activity SET loan_amount = ?, loan_taken_at = ?, loan_last_interest = ? WHERE guild_id = ? AND user_id = ?")) {
+            long now = System.currentTimeMillis();
+            pstmt.setInt(1, amount); pstmt.setLong(2, now); pstmt.setLong(3, now); pstmt.setString(4, guildId); pstmt.setString(5, userId);
+            pstmt.executeUpdate();
+        } catch (SQLException e) { e.printStackTrace(); }
+    }
+
+    public void payLoan(String guildId, String userId, int amount) {
+        ensureConnection();
+        try (PreparedStatement pstmt = connection.prepareStatement("UPDATE bot_user_activity SET loan_amount = GREATEST(0, loan_amount - ?) WHERE guild_id = ? AND user_id = ?")) {
+            pstmt.setInt(1, amount); pstmt.setString(2, guildId); pstmt.setString(3, userId);
+            pstmt.executeUpdate();
+        } catch (SQLException e) { e.printStackTrace(); }
+    }
+
+    public void updateDepositClaim(String guildId, String userId) {
+        ensureConnection();
+        try (PreparedStatement pstmt = connection.prepareStatement("UPDATE bot_user_activity SET deposit_last_claim = ? WHERE guild_id = ? AND user_id = ?")) {
+            pstmt.setLong(1, System.currentTimeMillis()); pstmt.setString(2, guildId); pstmt.setString(3, userId);
+            pstmt.executeUpdate();
+        } catch (SQLException e) { e.printStackTrace(); }
+    }
+
+    public void checkAndApplyLoanInterest(String guildId, String userId) {
+        ensureConnection();
+        try (PreparedStatement pstmt = connection.prepareStatement("SELECT loan_amount, loan_taken_at, loan_last_interest FROM bot_user_activity WHERE guild_id = ? AND user_id = ?")) {
+            pstmt.setString(1, guildId); pstmt.setString(2, userId);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                int loan = rs.getInt("loan_amount");
+                if (loan <= 0) return;
+
+                long takenAt = rs.getLong("loan_taken_at");
+                long lastInterest = rs.getLong("loan_last_interest");
+                long now = System.currentTimeMillis();
+
+                if (now - takenAt < 3 * 86400000L) return;
+
+                long referenceTime = Math.max(lastInterest, takenAt + 3 * 86400000L);
+                long daysPassed = (now - referenceTime) / 86400000L;
+
+                if (daysPassed > 0) {
+                    int newLoan = loan;
+                    for (int i = 0; i < daysPassed; i++) {
+                        newLoan += Math.max(1, (int)(newLoan * 0.01));
+                    }
+                    try (PreparedStatement upd = connection.prepareStatement("UPDATE bot_user_activity SET loan_amount = ?, loan_last_interest = ? WHERE guild_id = ? AND user_id = ?")) {
+                        upd.setInt(1, newLoan); upd.setLong(2, referenceTime + daysPassed * 86400000L); upd.setString(3, guildId); upd.setString(4, userId);
+                        upd.executeUpdate();
+                    }
+                }
+            }
+        } catch (SQLException e) {}
+    }
+
+    public int addCoins(String guildId, String userId, int amount, String type) {
+        ensureConnection(); checkAndCreateUser(guildId, userId);
+        if (amount <= 0) return 0;
+
+        boolean bypassTax = type.equals("LOAN_TAKE") || type.equals("BANK_TRANSFER") || type.equals("ADMIN_ADD");
+        int deductedAmount = 0;
+
+        try (PreparedStatement check = connection.prepareStatement("SELECT coins, loan_amount FROM bot_user_activity WHERE guild_id = ? AND user_id = ?")) {
+            check.setString(1, guildId); check.setString(2, userId);
+            ResultSet rs = check.executeQuery();
+            if (rs.next()) {
+                int currentCoins = rs.getInt("coins");
+                int loan = rs.getInt("loan_amount");
+                int finalToAdd = amount;
+
+                if (loan > 0 && !bypassTax) {
+                    double deductionRate = (currentCoins < 0) ? 0.90 : 0.15;
+                    int toDeduct = Math.max(1, (int) (amount * deductionRate));
+                    if (toDeduct > loan) toDeduct = loan;
+
+                    deductedAmount = toDeduct;
+                    finalToAdd -= toDeduct;
+                    loan -= toDeduct;
+
+                    try (PreparedStatement updateLoan = connection.prepareStatement("UPDATE bot_user_activity SET loan_amount = ? WHERE guild_id = ? AND user_id = ?")) {
+                        updateLoan.setInt(1, loan); updateLoan.setString(2, guildId); updateLoan.setString(3, userId);
+                        updateLoan.executeUpdate();
+                    }
+                }
+
+                try (PreparedStatement pstmt = connection.prepareStatement("UPDATE bot_user_activity SET coins = coins + ? WHERE guild_id = ? AND user_id = ?")) {
+                    pstmt.setInt(1, finalToAdd); pstmt.setString(2, guildId); pstmt.setString(3, userId);
+                    pstmt.executeUpdate();
+                }
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+
+        return deductedAmount; // Zwracamy ile komornik zabrał
     }
 
     public boolean removeCoins(String guildId, String userId, int amount, String type) {
@@ -450,6 +569,7 @@ public class DatabaseManager {
             try (PreparedStatement pstmt = connection.prepareStatement("DELETE FROM bot_companies WHERE guild_id = ?")) { pstmt.setString(1, guildId); pstmt.executeUpdate(); }
             try (PreparedStatement pstmt = connection.prepareStatement("DELETE FROM bot_employees WHERE guild_id = ?")) { pstmt.setString(1, guildId); pstmt.executeUpdate(); }
             try (PreparedStatement pstmt = connection.prepareStatement("DELETE FROM bot_bounties WHERE guild_id = ?")) { pstmt.setString(1, guildId); pstmt.executeUpdate(); }
+            try (PreparedStatement pstmt = connection.prepareStatement("DELETE FROM bot_bounties_v2 WHERE guild_id = ?")) { pstmt.setString(1, guildId); pstmt.executeUpdate(); }
         } catch (SQLException e) { e.printStackTrace(); }
     }
 }

@@ -23,11 +23,16 @@ public class ShopSyncTask {
     private final String apiToken = WebAPIManager.getApiToken();
     private final String baseUrl = WebAPIManager.BASE_URL;
 
-    public ShopSyncTask(JDA jda, DatabaseManager db) { this.jda = jda; this.db = db; }
+    public ShopSyncTask(JDA jda, DatabaseManager db) {
+        this.jda = jda;
+        this.db = db;
+    }
 
     public void startPolling() {
         scheduler.scheduleAtFixedRate(() -> {
-            for (Guild guild : jda.getGuilds()) fetchAndFulfillOrders(guild);
+            for (Guild guild : jda.getGuilds()) {
+                fetchAndFulfillOrders(guild);
+            }
         }, 10, 60, TimeUnit.SECONDS);
     }
 
@@ -37,7 +42,12 @@ public class ShopSyncTask {
         }
 
         try {
-            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(baseUrl + "/api/econizer/shop/orders?guild_id=" + guild.getId())).header("X-Econizer-Token", apiToken).GET().build();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(baseUrl + "/api/econizer/shop/orders?guild_id=" + guild.getId()))
+                    .header("X-Econizer-Token", apiToken)
+                    .GET()
+                    .build();
+
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200 && !response.body().isEmpty() && !response.body().equals("[]")) {
                 processOrdersJson(guild, response.body());
@@ -46,21 +56,33 @@ public class ShopSyncTask {
     }
 
     private void processOrdersJson(Guild guild, String json) {
+        // Bardzo sprytne wykorzystanie Regex do parsowania płaskiego JSON-a (pozwala uniknąć zmuszania użytkownika do pobierania biblioteki GSON/Jackson)
         Pattern pattern = Pattern.compile("\\{\"order_id\":(\\d+),\"discord_user_id\":\"(\\d+)\",\"delivery_type\":\"([^\"]+)\",\"delivery_reference\":\"([^\"]+)\"\\}");
         Matcher matcher = pattern.matcher(json);
+
         while (matcher.find()) {
-            String orderId = matcher.group(1); String userId = matcher.group(2); String type = matcher.group(3); String reference = matcher.group(4);
+            String orderId = matcher.group(1);
+            String userId = matcher.group(2);
+            String type = matcher.group(3);
+            String reference = matcher.group(4);
             boolean success = false;
 
             if (type.equals("discord_role")) {
                 Role role = guild.getRoleById(reference);
                 if (role != null) {
-                    guild.retrieveMemberById(userId).queue(member -> { guild.addRoleToMember(member, role).queue(); }, err -> {});
+                    guild.retrieveMemberById(userId).queue(member -> {
+                        guild.addRoleToMember(member, role).queue();
+                    }, err -> {});
                     success = true;
                 }
-            } else if (type.equals("virtual_item")) { success = true; } // Item dla bota
+            } else if (type.equals("virtual_item")) {
+                // Zarezerwowane na wirtualne przedmioty z poziomu WWW do bota (np. Zwierzaki, Skrzynki)
+                success = true;
+            }
 
-            if (success) confirmFulfillment(orderId);
+            if (success) {
+                confirmFulfillment(orderId);
+            }
         }
     }
 
@@ -70,7 +92,13 @@ public class ShopSyncTask {
         }
 
         try {
-            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(baseUrl + "/api/econizer/shop/orders/fulfill")).header("X-Econizer-Token", apiToken).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString("{\"order_id\":" + orderId + "}")).build();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(baseUrl + "/api/econizer/shop/orders/fulfill"))
+                    .header("X-Econizer-Token", apiToken)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString("{\"order_id\":" + orderId + "}"))
+                    .build();
+
             client.send(request, HttpResponse.BodyHandlers.ofString());
         } catch (Exception ignored) {}
     }

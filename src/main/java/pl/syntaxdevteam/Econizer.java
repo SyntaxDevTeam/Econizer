@@ -1,6 +1,7 @@
 package pl.syntaxdevteam;
 
 import io.github.cdimascio.dotenv.Dotenv;
+import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.requests.GatewayIntent;
 import pl.syntaxdevteam.listeners.*;
@@ -30,6 +31,7 @@ public class Econizer {
                     GatewayIntent.GUILD_MEMBERS
             );
 
+            // Rejestracja wszystkich modułów
             builder.addEventListeners(
                     new CoreManager(db),
                     new EconomyManager(db),
@@ -41,11 +43,19 @@ public class Econizer {
                     new ModerationManager(db)
             );
 
-            builder.build().awaitReady();
+            JDA jda = builder.build();
+            jda.awaitReady();
+
+            // Uruchomienie synchronizacji sklepu z panelem WWW (w tle)
+            ShopSyncTask shopSync = new ShopSyncTask(jda, db);
+            shopSync.startPolling();
+            System.out.println("[System] Uruchomiono moduł ShopSyncTask.");
+
             ScheduledExecutorService uptimeHeartbeat = MiniPortalUptimeHeartbeat.startFromConfig();
             if (uptimeHeartbeat != null) {
                 Runtime.getRuntime().addShutdownHook(new Thread(uptimeHeartbeat::shutdown, "miniportal-uptime-shutdown"));
             }
+
             System.out.println("[System] Bot jest online i gotowy do działania!");
 
         } catch (InterruptedException e) {

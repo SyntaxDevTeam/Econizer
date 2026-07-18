@@ -12,6 +12,7 @@ import org.jetbrains.annotations.NotNull;
 import java.awt.Color;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 public class ModerationManager extends ListenerAdapter {
 
@@ -23,11 +24,13 @@ public class ModerationManager extends ListenerAdapter {
 
     @Override
     public void onMessageReceived(@NotNull MessageReceivedEvent event) {
+        // Ignorujemy wiadomości od botów i prywatne
         if (event.getAuthor().isBot() || !event.isFromGuild()) return;
 
         String guildId = event.getGuild().getId();
         GuildSettings settings = db.getGuildSettings(guildId);
 
+        // WEB PANEL READY: Sprawdza flagę automodEnabled na żywo
         if (settings.automodEnabled && event.getMember() != null && !event.getMember().hasPermission(Permission.ADMINISTRATOR)) {
             List<String> blockedWords = db.getBlockedWords(guildId);
             String msgContent = event.getMessage().getContentRaw().toLowerCase();
@@ -42,10 +45,14 @@ public class ModerationManager extends ListenerAdapter {
 
             if (hasBadWord) {
                 event.getMessage().delete().queue();
+
+                // Ponieważ to MessageReceivedEvent, nie możemy użyć setEphemeral.
+                // Wysyłamy i usuwamy po 5s, aby nie śmiecić.
                 event.getChannel().sendMessage(LanguageManager.t(settings, "automod_warn", event.getAuthor().getId()))
-                        .queue(m -> m.delete().queueAfter(5, java.util.concurrent.TimeUnit.SECONDS));
+                        .queue(m -> m.delete().queueAfter(5, TimeUnit.SECONDS));
 
                 try {
+                    // Mute na 5 minut (wymaga uprawnień Moderate Members u bota)
                     event.getGuild().timeoutFor(event.getMember(), Duration.ofMinutes(5)).queue(null, err -> {});
                 } catch (Exception ignored) {}
             }
@@ -57,6 +64,7 @@ public class ModerationManager extends ListenerAdapter {
         String guildId = event.getGuild().getId();
         GuildSettings settings = db.getGuildSettings(guildId);
 
+        // Nadawanie autoroli (zabezpieczone przed nullami z bazy z panelu WWW)
         if (settings.autoroleId != null && !settings.autoroleId.isEmpty()) {
             Role role = event.getGuild().getRoleById(settings.autoroleId);
             if (role != null) {
@@ -64,10 +72,17 @@ public class ModerationManager extends ListenerAdapter {
             }
         }
 
+        // Wiadomość powitalna
         if (settings.welcomeChannelId != null && !settings.welcomeChannelId.isEmpty()) {
             TextChannel channel = event.getGuild().getTextChannelById(settings.welcomeChannelId);
             if (channel != null && channel.canTalk()) {
-                String msg = settings.welcomeMessage.replace("{user}", event.getMember().getAsMention());
+
+                // Zabezpieczenie: jeśli admin wyczyści wiadomość na WWW, wstawiamy bezpieczny fallback, aby zapobiec crashom bota
+                String rawMsg = (settings.welcomeMessage != null && !settings.welcomeMessage.trim().isEmpty())
+                        ? settings.welcomeMessage
+                        : "Welcome {user} to our server!";
+
+                String msg = rawMsg.replace("{user}", event.getMember().getAsMention());
 
                 EmbedBuilder embed = new EmbedBuilder()
                         .setColor(Color.decode("#2ECC71"))

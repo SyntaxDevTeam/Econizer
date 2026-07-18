@@ -1,2 +1,0 @@
-# Econizer
-Ekonomiczny bot przyszłości
